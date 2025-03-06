@@ -1,26 +1,33 @@
 use std::{fs, io::Read};
 
-const ROM_BASE_ADDR: u32 = 0x10000000;
-const ROM_BASE_ADDR_EMU: u32 = 0x10200000;
+pub const ROM_BASE_ADDR: u32 = 0x10000000;
+pub const ROM_BASE_ADDR_EMU: u32 = 0x10200000;
 
-enum EdCommand {
+pub enum EdCommand {
     Test,
     RamRead(u32, u32),
     RomRead(u32, u32),
     RomWrite(u32, u32),
     RomFill(u32, u32, u32),
     FpgaInit(u32),
-    AppStart,
+    AppStart(bool),
 }
 
 #[repr(u8)]
-enum EdSaveType {
+pub enum EdSaveType {
     Eeprom4k = 0x10,
     Eeprom16k = 0x20,
     Sram = 0x30,
     Sram768k = 0x40,
     FlashRam = 0x50,
     Sram128k = 0x60,
+}
+
+#[repr(u8)]
+pub enum EdRtcRegionType {
+    Rtc = 0x01,
+    NoRegion = 0x02,
+    All = 0x03,
 }
 
 impl EdCommand {
@@ -34,7 +41,7 @@ impl EdCommand {
             EdCommand::RomWrite(addr, size) => (b'W', *addr, *size, 0),
             EdCommand::RomFill(addr, size, arg) => (b'c', *addr, *size, *arg),
             EdCommand::FpgaInit(size) => (b'f', 0, *size, 0),
-            EdCommand::AppStart => (b's', 0, 0, 1),
+            EdCommand::AppStart(save_path) => (b's', 0, 0, *save_path as u32),
         };
 
         let size = if size % 512 != 0 {
@@ -60,12 +67,12 @@ impl EdCommand {
 }
 
 #[derive(Debug)]
-struct Everdrive {
+pub struct Everdrive {
     port: Box<dyn serialport::SerialPort>,
 }
 
 impl Everdrive {
-    fn new(timeout: std::time::Duration) -> std::io::Result<Self> {
+    pub fn new(timeout: std::time::Duration) -> std::io::Result<Self> {
         let ports = serialport::available_ports().expect("No available USB ports found");
 
         let usb_port = match ports.iter().find(|p| match &p.port_type {
@@ -145,7 +152,26 @@ impl Everdrive {
         self.rx(b'r')
     }
 
-    pub fn app_start(&mut self, file_name: &str) -> std::io::Result<()> {
+    /// Starts a rom file. The rom file must be loaded first using `load_rom`
+    ///
+    /// Optional `file_name` is used for specifying save file on the SD card
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    /// use std::fs;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let rom_data = fs::read("your_rom.z64").unwrap();
+    ///
+    /// ed.load_rom(rom_data, None, None, None).unwrap();
+    /// ed.app_start(Some("your_rom.z64")).unwrap();
+    ///
+    /// ```
+    pub fn app_start(&mut self, file_name: Option<&str>) -> std::io::Result<()> {
+        let file_name_buf = if let Some(file_name) = file_name {
         if file_name.len() >= 256 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -156,15 +182,47 @@ impl Everdrive {
         let mut buf = [0; 256];
         buf[0..file_name.len()].copy_from_slice(file_name.as_bytes());
 
-        self.tx(EdCommand::AppStart)?;
-        self.write(&buf)
+            Some(buf)
+        } else {
+            None
+        };
+
+        self.tx(EdCommand::AppStart(file_name_buf.is_some()))?;
+
+        if let Some(buf) = file_name_buf {
+            self.write(&buf)?;
     }
 
+        Ok(())
+    }
+
+    /// Loads a rom file into the specified base address
+    ///
+    /// `rom_file` should contain the rom file as data. The base address is optional and defaults to ROM_BASE_ADDR.
+    /// `save_type` and `rtc_region_type` are optional and are used to specify the save type and RTC region type respectively.
+    /// Additional checks are done to determine the endianness of the rom file and swap bytes accordingly, and
+    /// to set the save type and RTC region type in the rom file header.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    /// use std::fs;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let rom_data = fs::read("your_rom.z64").unwrap();
+    ///
+    /// ed.load_rom(rom_data, None, None, None).unwrap();
+    /// ed.app_start(Some("your_rom.z64")).unwrap();
+    ///
+    /// ```
     pub fn load_rom(
         &mut self,
         rom_file: Vec<u8>,
         base_address: Option<u32>,
         save_type: Option<EdSaveType>,
+        rtc_region_type: Option<EdRtcRegionType>,
     ) -> std::io::Result<()> {
         // reference https://github.com/krikzz/ED64/blob/master/usb64/usb64/CommandProcessor.cs#L125
         let mut rom_file = rom_file.clone();
@@ -175,26 +233,29 @@ impl Everdrive {
         let mut base_address = base_address.unwrap_or(ROM_BASE_ADDR);
 
         match header_word_be {
-            0x80371240 => {
-                println!("ROM is big-endian native");
+            0x80371240 /* Big-endian native */ => { /* No need to do anything */}
+            0x37804012 /* Byte-swapped, swap every 2 bytes */=> {
+                for i in (0..rom_file.len()).step_by(2) {
+                    rom_file.swap(i, i + 1);
+                }
             }
-            0x37804012 => {
-                todo!("ROM is byte swapped");
-            }
-            0x40123780 => {
-                todo!("ROM is little endian");
+            0x40123780 /* Little-endian, swap every 4 bytes */ => {
+                for i in (0..rom_file.len()).step_by(4) {
+                    rom_file.swap(i, i + 3);
+                    rom_file.swap(i + 1, i + 2);
+                }
             }
             _ => {
-                println!("ROM is not recognized. Assuming emulator");
+                // Don't swap and assume emulator rom
                 base_address = ROM_BASE_ADDR_EMU;
             }
         };
 
-        if let Some(_st) = save_type {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Save type not supported",
-            ));
+        if let Some(st) = save_type {
+            let region_type = rtc_region_type.map(|val| val as u8).unwrap_or(0);
+            rom_file[0x3C] = 0x45;
+            rom_file[0x3D] = 0x44;
+            rom_file[0x3F] = ((st as u8) << 4) | region_type;
         }
 
         self.load_rom_force(rom_file, base_address)?;
@@ -202,6 +263,8 @@ impl Everdrive {
         Ok(())
     }
 
+    /// Loads a rom file into the specified base address. But does not do checks for
+    /// endianness or base_address.
     pub fn load_rom_force(&mut self, data: Vec<u8>, base_address: u32) -> std::io::Result<()> {
         const CRC_AREA_SIZE: usize = 0x101000;
 
@@ -216,9 +279,7 @@ impl Everdrive {
         }
 
         self.tx(EdCommand::RomWrite(base_address, data.len() as u32))?;
-        self.write(&data)?;
-
-        Ok(())
+        self.write(&data)
     }
 
     pub fn tx(&mut self, cmd: EdCommand) -> std::io::Result<()> {
