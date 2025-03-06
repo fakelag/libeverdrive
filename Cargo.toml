@@ -1,0 +1,10 @@
+[package]
+name = "libeverdrive"
+description = "libeverdrive is a library for programming everdrive through usb development port"
+repository = "https://github.com/fakelag/libeverdrive"
+version = "0.0.1"
+edition = "2024"
+authors = ["fakelag"]
+
+[dependencies]
+serialport = "4.7.0"
