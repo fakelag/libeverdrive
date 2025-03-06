@@ -7,4 +7,9 @@ edition = "2024"
 authors = ["fakelag"]
 
 [dependencies]
+bmp = { version = "0.5.0", optional = true }
 serialport = "4.7.0"
+
+[features]
+default = []
+bitmap = ["bmp"]

@@ -1,7 +1,11 @@
-use std::{fs, io::Read};
+use std::io::Read;
+
+#[cfg(feature = "bitmap")]
+use bmp::{Image, Pixel};
 
 pub const ROM_BASE_ADDR: u32 = 0x10000000;
 pub const ROM_BASE_ADDR_EMU: u32 = 0x10200000;
+pub const KSEG0_BASE_ADDR: u32 = 0x80000000;
 
 pub enum EdCommand {
     Test,
@@ -147,6 +151,75 @@ impl Everdrive {
         Ok(())
     }
 
+    /// Takes a screenshot from the N64 device. The return value is the n64 framebuffer
+    /// and the screen with and height.
+    ///
+    /// Optional `screen_size_wh` can be used to specify screen width and height. If
+    /// None, an attempt is made to determine the screen size automatically via
+    /// the console video interface.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let framebuffer = ed.screenshot(None).unwrap();
+    /// println!("{:?}", framebuffer);
+    /// ```
+    pub fn screenshot(
+        &mut self,
+        screen_size_wh: Option<(u32, u32)>,
+    ) -> std::io::Result<(Vec<u8>, u32, u32)> {
+        let mut buf = [0; 512];
+        self.ram_read(0xA4400004, &mut buf)?;
+
+        let fb_ptr = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
+
+        let (screen_width, screen_height) = match screen_size_wh {
+            Some((w, h)) => (w, h),
+            None => {
+                let screen_width = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
+                match screen_width {
+                    320 => (screen_width, 240),
+                    640 => (screen_width, 480),
+                    _ /* Default height to 240 */ => (screen_width, 240),
+                }
+            }
+        };
+
+        let mut buf = vec![0; (screen_width * screen_height * 2) as usize];
+        self.ram_read(KSEG0_BASE_ADDR + fb_ptr, &mut buf)?;
+        Ok((buf, screen_width, screen_height))
+    }
+
+    #[cfg(feature = "bitmap")]
+    /// Takes a screenshot and converts it to a BMP image buffer.
+    ///
+    /// Optional `screen_size_wh` can be used to specify screen width and height. If
+    /// None, an attempt is made to determine the screen size automatically via
+    /// the console video interface.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let bmp_buf = ed.screenshot_bmp(None).unwrap();
+    ///
+    /// std::fs::write("screenshot.bmp", bmp_buf).unwrap();
+    /// ```
+    pub fn screenshot_bmp(
+        &mut self,
+        screen_size_wh: Option<(u32, u32)>,
+    ) -> std::io::Result<Vec<u8>> {
+        let (buf, width, height) = self.screenshot(screen_size_wh)?;
+        Self::n64_fb_to_bitmap(&buf, width, height)
+    }
+
     /// Fills a region of the rom with a value.
     ///
     /// # Examples
@@ -270,6 +343,9 @@ impl Everdrive {
     pub fn fpga_init(&mut self, size: u32, data: &[u8]) -> std::io::Result<()> {
         self.tx(EdCommand::FpgaInit(size))?;
         self.write(data)?;
+
+        // @todo - Check that the second response byte is 0
+        // non-zero are error codes
         self.rx(b'r')
     }
 
@@ -444,6 +520,29 @@ impl Everdrive {
             .iter()
             .zip(data.iter().skip(0x20))
             .all(|(a, b)| a == b)
+    }
+
+    #[cfg(feature = "bitmap")]
+    fn n64_fb_to_bitmap(fb: &[u8], width: u32, height: u32) -> std::io::Result<Vec<u8>> {
+        let mut img = Image::new(width, height);
+
+        for y in 0..height {
+            for x in 0..width {
+                let b0 = fb[(y * width + x) as usize * 2];
+                let b1 = fb[(y * width + x) as usize * 2 + 1];
+
+                let r = b0 & 0xF8;
+                let g = ((b0 & 0x07) << 5) | ((b1 & 0xC0) >> 3);
+                let b = (b1 & 0x3E) << 2;
+
+                img.set_pixel(x, y, Pixel::new(r, g, b));
+            }
+        }
+
+        let mut img_buf: Vec<u8> = Vec::new();
+        img.to_writer(&mut img_buf)?;
+
+        Ok(img_buf)
     }
 }
 
