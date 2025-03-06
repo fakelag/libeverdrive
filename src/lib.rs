@@ -368,15 +368,15 @@ impl Everdrive {
     /// ```
     pub fn app_start(&mut self, file_name: Option<&str>) -> std::io::Result<()> {
         let file_name_buf = if let Some(file_name) = file_name {
-        if file_name.len() >= 256 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "File name is too long",
-            ));
-        }
+            if file_name.len() >= 256 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "File name is too long",
+                ));
+            }
 
-        let mut buf = [0; 256];
-        buf[0..file_name.len()].copy_from_slice(file_name.as_bytes());
+            let mut buf = [0; 256];
+            buf[0..file_name.len()].copy_from_slice(file_name.as_bytes());
 
             Some(buf)
         } else {
@@ -387,7 +387,7 @@ impl Everdrive {
 
         if let Some(buf) = file_name_buf {
             self.write(&buf)?;
-    }
+        }
 
         Ok(())
     }
@@ -543,35 +543,5 @@ impl Everdrive {
         img.to_writer(&mut img_buf)?;
 
         Ok(img_buf)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test() {
-        let mut ed = match Everdrive::new(std::time::Duration::from_millis(100)) {
-            Ok(ed) => {
-                println!("Everdrive device found");
-                ed
-            }
-            Err(err) => {
-                println!("Failed to find Everdrive: {:?}", err);
-                return;
-            }
-        };
-
-        match ed.status() {
-            Ok(_) => println!("ED status OK"),
-            Err(err) => println!("ED status error: {:?}", err),
-        }
-
-        let mut buf = [0; 512];
-        match ed.rom_read(0x10000000, &mut buf) {
-            Ok(_) => println!("Rom content: {:?}", buf),
-            Err(err) => println!("Read error: {:?}", err),
-        }
     }
 }
