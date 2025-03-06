@@ -3,11 +3,13 @@
 libeverdrive provides a rust interface for programming [EverDrive](https://krikzz.com/) devices through its USB development port.
 
 #### Installing
+
 ```shell
 cargo add libeverdrive
 ```
 
 #### Usage example
+
 ```rust
 use libeverdrive::Everdrive;
 
@@ -18,20 +20,20 @@ fn main() {
             ed
         },
         Err(err) => {
-            println!("Failed to find Everdrive: {:?}", err);
+            eprintln!("Failed to find Everdrive: {:?}", err);
             return;
         }
     };
 
     match ed.status() {
         Ok(_) => println!("ED status OK"),
-        Err(err) => println!("ED status error: {:?}", err),
+        Err(err) => eprintln!("ED status error: {:?}", err),
     }
 
     let mut buf = [0; 512];
     match ed.rom_read(0x10000000, &mut buf) {
         Ok(_) => println!("Rom content: {:?}", buf),
-        Err(err) => println!("Read error: {:?}", err),
+        Err(err) => eprintln!("Read error: {:?}", err),
     }
 }
 ```
