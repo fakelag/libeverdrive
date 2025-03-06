@@ -72,6 +72,24 @@ pub struct Everdrive {
 }
 
 impl Everdrive {
+    /// Creates a new Everdrive instance and returns an error if the device is not found
+    /// or if there is an error opening the USB serial port.
+    ///
+    /// `timeout` is configured for the serial port for future reads and writes
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = match Everdrive::new(std::time::Duration::from_millis(100)) {
+    ///     Ok(ed) => ed,
+    ///     Err(err) => {
+    ///         eprintln!("Failed to find Everdrive: {:?}", err);
+    ///         return;
+    ///     }
+    /// };
+    /// ```
     pub fn new(timeout: std::time::Duration) -> std::io::Result<Self> {
         let ports = serialport::available_ports().expect("No available USB ports found");
 
@@ -109,43 +127,146 @@ impl Everdrive {
         Ok(ed)
     }
 
+    /// Tests a handshake with the Everdrive device and returns an error if the handshake fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// match ed.status() {
+    ///    Ok(_) => println!("ED status OK"),
+    ///   Err(err) => eprintln!("ED status error: {:?}", err),
+    /// }
+    /// ```
     pub fn status(&mut self) -> std::io::Result<()> {
         self.tx(EdCommand::Test)?;
         self.rx(b'r')?;
         Ok(())
     }
 
+    /// Fills a region of the rom with a value.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// ed.rom_fill(0x10000000, 0x1000, 0xFF).unwrap();
+    /// ```
     pub fn rom_fill(&mut self, addr: u32, size: u32, val: u32) -> std::io::Result<()> {
         self.tx(EdCommand::RomFill(addr, size, val))
     }
 
+    /// Reads a region of the rom into a buffer. Buffer size must be divisible by 512.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let mut buf = vec![0; 512];
+    /// ed.rom_read(0x10000000, &mut buf).unwrap();
+    ///
+    /// println!("{:?}", buf);
+    /// ```
     pub fn rom_read(&mut self, addr: u32, buf: &mut [u8]) -> std::io::Result<()> {
         self.tx(EdCommand::RomRead(addr, buf.len() as u32))?;
         self.read(buf)
     }
 
+    /// Allocates a new buffer of size `S` and reads a region of the rom into it.
+    /// Size `S` must be divisible by 512.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let buf = ed.rom_read_size::<512>(0x10000000).unwrap();
+    /// println!("{:?}", buf);
+    /// ```
     pub fn rom_read_size<const S: usize>(&mut self, addr: u32) -> std::io::Result<[u8; S]> {
         let mut buf = [0; S];
         self.rom_read(addr, &mut buf)?;
         Ok(buf)
     }
 
+    /// Reads a region of the ram into a buffer. Buffer size must be divisible by 512.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let mut buf = vec![0; 512];
+    /// ed.ram_read(0x10000000, &mut buf).unwrap();
+    ///
+    /// println!("{:?}", buf);
+    /// ```
     pub fn ram_read(&mut self, addr: u32, buf: &mut [u8]) -> std::io::Result<()> {
         self.tx(EdCommand::RamRead(addr, buf.len() as u32))?;
         self.read(buf)
     }
 
+    /// Allocates a new buffer of size `S` and reads a region of the ram into it.
+    /// Size `S` must be divisible by 512.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let buf = ed.ram_read_size::<512>(0x10000000).unwrap();
+    /// println!("{:?}", buf);
+    /// ```
     pub fn ram_read_size<const S: usize>(&mut self, addr: u32) -> std::io::Result<[u8; S]> {
         let mut buf = [0; S];
         self.ram_read(addr, &mut buf)?;
         Ok(buf)
     }
 
+    /// Writes a region of the rom with data. Data size must be divisible by 512.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let data = vec![0; 512];
+    /// ed.rom_write(0x10000000, &data).unwrap();
+    /// ```
     pub fn rom_write(&mut self, addr: u32, data: &[u8]) -> std::io::Result<()> {
         self.tx(EdCommand::RomWrite(addr, data.len() as u32))?;
         self.write(data)
     }
 
+    /// Inits fpga with a RBF file. Data size must be divisible by 512.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    ///
+    /// let fpga_data = vec![0; 0x100000];
+    /// ed.fpga_init(0x100000, &fpga_data).unwrap();
+    /// ```
     pub fn fpga_init(&mut self, size: u32, data: &[u8]) -> std::io::Result<()> {
         self.tx(EdCommand::FpgaInit(size))?;
         self.write(data)?;
@@ -168,7 +289,6 @@ impl Everdrive {
     ///
     /// ed.load_rom(rom_data, None, None, None).unwrap();
     /// ed.app_start(Some("your_rom.z64")).unwrap();
-    ///
     /// ```
     pub fn app_start(&mut self, file_name: Option<&str>) -> std::io::Result<()> {
         let file_name_buf = if let Some(file_name) = file_name {
@@ -215,7 +335,6 @@ impl Everdrive {
     ///
     /// ed.load_rom(rom_data, None, None, None).unwrap();
     /// ed.app_start(Some("your_rom.z64")).unwrap();
-    ///
     /// ```
     pub fn load_rom(
         &mut self,
@@ -282,10 +401,15 @@ impl Everdrive {
         self.write(&data)
     }
 
+    /// Transmits an EdCommand to the Everdrive device
+    /// and returns an error if sending the command fails.
     pub fn tx(&mut self, cmd: EdCommand) -> std::io::Result<()> {
         self.port.write_all(&cmd.to_bytes()?)
     }
 
+    /// Receives a response from the Everdrive device
+    /// and returns an error if reading from the device fails
+    /// or if the response is invalid.
     pub fn rx(&mut self, resp: u8) -> std::io::Result<()> {
         let mut recv_buf = vec![0; 16];
 
@@ -304,10 +428,12 @@ impl Everdrive {
         }
     }
 
+    /// Directly write a buffer to the serial port
     pub fn write(&mut self, buf: &[u8]) -> std::io::Result<()> {
         self.port.write_all(buf)
     }
 
+    /// Directly read a buffer from the serial port
     pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
         self.port.read_exact(buf)
     }
