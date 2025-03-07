@@ -70,7 +70,7 @@ impl Everdrive {
     /// ```no_run
     /// use libeverdrive::Everdrive;
     ///
-    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    /// let mut ed = Everdrive::new("COM3").unwrap();
     ///
     /// match ed.ed_status() {
     ///    Ok(_) => println!("ED status OK"),
@@ -90,7 +90,7 @@ impl Everdrive {
     /// ```no_run
     /// use libeverdrive::Everdrive;
     ///
-    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    /// let mut ed = Everdrive::new("COM3").unwrap();
     ///
     /// ed.ed_rom_fill(0x10000000, 0x1000, 0xFF).unwrap();
     /// ```
@@ -105,7 +105,7 @@ impl Everdrive {
     /// ```no_run
     /// use libeverdrive::Everdrive;
     ///
-    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    /// let mut ed = Everdrive::new("COM3").unwrap();
     ///
     /// let data = vec![0; 512];
     /// ed.ed_rom_write(0x10000000, &data).unwrap();
@@ -122,7 +122,7 @@ impl Everdrive {
     /// ```no_run
     /// use libeverdrive::Everdrive;
     ///
-    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    /// let mut ed = Everdrive::new("COM3").unwrap();
     ///
     /// let fpga_data = vec![0; 0x100000];
     /// ed.ed_fpga_init(0x100000, &fpga_data).unwrap();
@@ -146,7 +146,7 @@ impl Everdrive {
     /// use libeverdrive::Everdrive;
     /// use std::fs;
     ///
-    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    /// let mut ed = Everdrive::new("COM3").unwrap();
     ///
     /// let rom_data = fs::read("your_rom.z64").unwrap();
     ///
@@ -192,7 +192,7 @@ impl Everdrive {
     /// use libeverdrive::Everdrive;
     /// use std::fs;
     ///
-    /// let mut ed = Everdrive::new(std::time::Duration::from_millis(100)).unwrap();
+    /// let mut ed = Everdrive::new("COM3").unwrap();
     ///
     /// let rom_data = fs::read("your_rom.z64").unwrap();
     ///

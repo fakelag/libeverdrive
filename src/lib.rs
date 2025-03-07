@@ -16,49 +16,33 @@ impl Everdrive {
     /// ```no_run
     /// use libeverdrive::Everdrive;
     ///
-    /// let mut ed = match Everdrive::new(std::time::Duration::from_millis(100)) {
-    ///     Ok(ed) => ed,
-    ///     Err(err) => {
-    ///         eprintln!("Failed to find Everdrive: {:?}", err);
-    ///         return;
-    ///     }
-    /// };
-    /// ```
-    pub fn new(timeout: std::time::Duration) -> std::io::Result<Self> {
-        let ports = serialport::available_ports().expect("No available USB ports found");
-
-        let usb_port = match ports.iter().find(|p| match &p.port_type {
-            serialport::SerialPortType::UsbPort(info) => info.vid == 0x0403 && info.pid == 0x6001,
-            _ => false,
-        }) {
-            Some(port) => port,
-            None => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Everdrive USB device not found",
-                ));
-            }
-        };
-
-        let mut port = match serialport::new(&usb_port.port_name, 115_200).open() {
+    /// let usb_ports = Everdrive::find_usb_devices();
+    /// assert!(!usb_ports.is_empty());
+    ///
+    /// let mut ed = Everdrive::new(&usb_ports[0]).unwrap();
+    ///
+    /// assert!(ed.ed_status().is_ok());
+    ///  ```
+    pub fn new(port_name: &str) -> std::io::Result<Self> {
+        let port = match serialport::new(port_name, 115_200).open() {
             Ok(port) => port,
             Err(err) => {
                 return Err(err.into());
             }
         };
 
-        match port.set_timeout(timeout) {
-            Ok(_) => (),
+        let mut ed = Self { port };
+        ed.set_timeout(std::time::Duration::from_millis(100))?;
+        Ok(ed)
+    }
+
+    pub fn set_timeout(&mut self, timeout: std::time::Duration) -> std::io::Result<()> {
+        match self.port.set_timeout(timeout) {
+            Ok(_) => Ok(()),
             Err(err) => {
                 return Err(err.into());
             }
-        };
-
-        let mut ed = Self { port };
-
-        ed.ed_status()?;
-
-        Ok(ed)
+        }
     }
 
     /// Directly write a buffer to the serial port
@@ -69,5 +53,34 @@ impl Everdrive {
     /// Directly read a buffer from the serial port
     pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
         self.port.read_exact(buf)
+    }
+
+    /// Find available USB ports with everdrive devices and returns a list of port names
+    /// matching Everdrive VID and PID. The port name can be used to create a new Everdrive instance.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use libeverdrive::Everdrive;
+    ///
+    /// let usb_ports = Everdrive::find_usb_devices();
+    ///
+    /// println!("Found devices: {:?}", usb_ports);
+    /// ```
+    pub fn find_usb_devices() -> Vec<String> {
+        let ports = serialport::available_ports().expect("No available USB ports found");
+
+        let ed_device_ports = ports.iter().filter_map(|p| match &p.port_type {
+            serialport::SerialPortType::UsbPort(info) => {
+                if info.vid == 0x0403 && info.pid == 0x6001 {
+                    Some(p.port_name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        });
+
+        ed_device_ports.collect()
     }
 }
