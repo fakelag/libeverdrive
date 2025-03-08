@@ -112,7 +112,7 @@ impl Everdrive {
     /// ```
     pub fn ed_rom_write(&mut self, addr: u32, data: &[u8]) -> std::io::Result<()> {
         self.ed_tx(EdCommand::RomWrite(addr, data.len() as u32))?;
-        self.write(data)
+        self.write_all(data)
     }
 
     /// Inits fpga with a RBF file. Data size must be divisible by 512.
@@ -129,7 +129,7 @@ impl Everdrive {
     /// ```
     pub fn ed_fpga_init(&mut self, size: u32, data: &[u8]) -> std::io::Result<()> {
         self.ed_tx(EdCommand::FpgaInit(size))?;
-        self.write(data)?;
+        self.write_all(data)?;
 
         // @todo - Check that the second response byte is 0
         // non-zero are error codes
@@ -173,7 +173,7 @@ impl Everdrive {
         self.ed_tx(EdCommand::AppStart(file_name_buf.is_some()))?;
 
         if let Some(buf) = file_name_buf {
-            self.write(&buf)?;
+            self.write_all(&buf)?;
         }
 
         Ok(())
@@ -258,7 +258,7 @@ impl Everdrive {
     /// Transmits an EdCommand to the Everdrive device
     /// and returns an error if sending the command fails.
     pub fn ed_tx(&mut self, cmd: EdCommand) -> std::io::Result<()> {
-        self.write(&cmd.to_bytes()?)
+        self.write_all(&cmd.to_bytes()?)
     }
 
     /// Receives a response from the Everdrive device
@@ -267,7 +267,7 @@ impl Everdrive {
     pub fn ed_rx(&mut self, resp: u8) -> std::io::Result<()> {
         let mut recv_buf = vec![0; 16];
 
-        match self.read(&mut recv_buf) {
+        match self.read_exact(&mut recv_buf) {
             Ok(_) => {
                 if recv_buf[0..4] == [b'c', b'm', b'd', resp] {
                     Ok(())

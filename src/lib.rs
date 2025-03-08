@@ -1,4 +1,5 @@
 mod edos;
+mod unf;
 
 #[derive(Debug)]
 pub struct Everdrive {
@@ -45,14 +46,28 @@ impl Everdrive {
         }
     }
 
-    /// Directly write a buffer to the serial port
-    pub fn write(&mut self, buf: &[u8]) -> std::io::Result<()> {
+    pub fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         self.port.write_all(buf)
     }
 
-    /// Directly read a buffer from the serial port
-    pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+    pub fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
         self.port.read_exact(buf)
+    }
+
+    pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.port.read(buf)
+    }
+
+    pub fn read_word_be(&mut self) -> std::io::Result<u32> {
+        let mut buf = [0; 4];
+        self.read_exact(&mut buf)?;
+        Ok(u32::from_be_bytes(buf))
+    }
+
+    pub fn read_byte(&mut self) -> std::io::Result<u8> {
+        let mut buf = [0; 1];
+        self.read_exact(&mut buf)?;
+        Ok(buf[0])
     }
 
     /// Find available USB ports with everdrive devices and returns a list of port names
